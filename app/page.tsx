@@ -466,7 +466,7 @@ export default function ChatApp() {
   };
 
   const handleSend = useCallback(
-    async (e?: React.FormEvent<HTMLFormElement>) => {
+    async (e?: React.SubmitEvent<HTMLFormElement>) => {
       e?.preventDefault();
       if (isLoading) return;
 
