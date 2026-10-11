@@ -2,11 +2,19 @@
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
+export interface ReferencedFileInfo {
+  path: string;
+  name: string;
+  lines: number;
+  size: number;
+}
+
 export interface Message {
   role: MessageRole;
   content: string;
   displayContent?: string;
   images?: string[];
+  referencedFiles?: ReferencedFileInfo[];
   timestamp?: number;
 }
 

@@ -2,6 +2,7 @@
 
 import { NextResponse } from 'next/server';
 import { Agent, fetch as ollamaFetch } from 'undici';
+import { detectAndReadLocalFiles, ReferencedLocalFile } from '@/lib/localFileHelper';
 
 // メッセージの型を定義し、TypeScriptの型安全性を確保します
 interface Message {
@@ -25,15 +26,43 @@ const ollamaDispatcher = new Agent({
 
 /**
  * Ollama APIと通信し、チャットの応答を返すAPIエンドポイント
- * 参考: crystal-method.com/blog/ollama-api/ の /api/chat エンドポイント仕様に準拠
+ * 質問文内のローカルファイルパス自動検知・読み込みに対応
  * 
  * @param request - クライアントからのリクエスト
- * @returns Ollamaからの応答を含むJSON
+ * @returns Ollamaからの応答および参照ファイル一覧を含むJSON
  */
 export async function POST(request: Request) {
   try {
     // クライアントから送信されたデータを受け取ります
     const { messages, model } = await request.json();
+
+    // ユーザーの最新メッセージからファイルパスを自動検出・読込
+    const lastUserMsg = [...messages].reverse().find((m: Message) => m.role === 'user');
+    let referencedFiles: ReferencedLocalFile[] = [];
+
+    let processedMessages: Message[] = messages;
+
+    if (lastUserMsg) {
+      referencedFiles = await detectAndReadLocalFiles(lastUserMsg.content);
+
+      if (referencedFiles.length > 0) {
+        // ローカルファイルの内容をコンテキストとして構築
+        const contextParts = referencedFiles.map(
+          (f) => `--- 参照ローカルファイル: ${f.path} (${f.lines}行) ---\n${f.content}\n--- ファイル末尾 ---`
+        );
+        const contextInjection = `【システム指示: 質問文で指定された以下のローカルソースコードを直接閲覧・参照して回答してください】\n\n${contextParts.join('\n\n')}`;
+
+        processedMessages = messages.map((m: Message) => {
+          if (m === lastUserMsg) {
+            return {
+              ...m,
+              content: `${contextInjection}\n\n【ユーザーの質問】\n${m.content}`,
+            };
+          }
+          return m;
+        });
+      }
+    }
 
     const ollamaBaseUrl = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/$/, '');
     const ollamaUrl = `${ollamaBaseUrl}/api/chat`;
@@ -46,11 +75,9 @@ export async function POST(request: Request) {
       },
       dispatcher: ollamaDispatcher,
       signal: request.signal,
-      // Ollama APIの仕様に合わせてデータを構築します
       body: JSON.stringify({
         model: model,
-        // ★ 修正点: クライアント側のroleをOllamaが期待する 'system', 'user', 'assistant' にマッピング
-        messages: messages.map((m: Message) => ({
+        messages: processedMessages.map((m: Message) => ({
           role: m.role === 'user' ? 'user' : m.role === 'system' ? 'system' : 'assistant',
           content: m.content,
           ...(m.images?.length ? { images: m.images } : {}),
@@ -59,14 +86,13 @@ export async function POST(request: Request) {
           num_ctx: 32768,
           num_predict: 8192,
         },
-        stream: false, // 一括でレスポンスを取得するため stream: false を指定
+        stream: false,
       }),
     });
 
     // Ollama APIからのレスポンスがエラーコードだった場合
     if (!response.ok) {
       const errorText = await response.text(); 
-      
       return NextResponse.json({ 
         error: `Ollama APIエラーが発生しました。Ollamaが起動しているか確認してください。詳細: ${errorText}` 
       }, { status: response.status });
@@ -77,14 +103,21 @@ export async function POST(request: Request) {
 
     // AIの応答テキストを返却
     const answer = data.message?.content || data.content || '';
-    return NextResponse.json({ response: answer });
+    return NextResponse.json({
+      response: answer,
+      referencedLocalFiles: referencedFiles.map((f) => ({
+        path: f.path,
+        name: f.name,
+        lines: f.lines,
+        size: f.size,
+      })),
+    });
 
   } catch (error) {
     if (request.signal.aborted) {
       return new Response(null, { status: 499 });
     }
 
-    // ネットワーク接続や、JSON解析などの予期せぬエラーを捕捉
     console.error('Ollama API呼び出し中にエラーが発生しました:', error);
 
     if (error instanceof Error && error.cause instanceof Error && 'code' in error.cause) {
@@ -97,7 +130,6 @@ export async function POST(request: Request) {
       }
     }
     
-    // サーバー側の予期せぬエラーとしてクライアントに通知
     return NextResponse.json({ error: '内部処理エラー: Ollamaサーバーとの通信に失敗しました。' }, { status: 500 });
   }
 }

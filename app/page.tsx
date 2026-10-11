@@ -264,7 +264,12 @@ export default function ChatApp() {
       const historyWithoutImages = Object.fromEntries(
         Object.entries(history).map(([topic, messages]) => [
           topic,
-          messages.map(({ role, content, displayContent }) => ({ role, content, displayContent })),
+          messages.map(({ role, content, displayContent, referencedFiles }) => ({
+            role,
+            content,
+            displayContent,
+            ...(referencedFiles ? { referencedFiles } : {}),
+          })),
         ]),
       );
       window.localStorage.setItem('ai-chat-history', JSON.stringify(historyWithoutImages));
@@ -323,6 +328,33 @@ export default function ChatApp() {
       [fileId]: updatedContent,
     }));
   }, []);
+
+  const handleAttachLocalFile = useCallback((file: { name: string; path: string; content: string }) => {
+    setAttachedFiles((prev) => {
+      if (prev.length >= MAX_ATTACHMENTS) {
+        setFileError(`添付できるファイルは最大 ${MAX_ATTACHMENTS} 件です。`);
+        return prev;
+      }
+      return [
+        ...prev,
+        {
+          id: `local-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: `${file.name}`,
+          kind: 'text',
+          content: `// ファイルパス: ${file.path}\n${file.content}`,
+        },
+      ];
+    });
+  }, []);
+
+  const handleAskAboutLocalFile = useCallback((file: { name: string; path: string; content: string }) => {
+    handleAttachLocalFile(file);
+    setInput((prev) => {
+      const prompt = `以下のローカルファイルについて、構成と役割を解説してください。\n対象: ${file.path}`;
+      return prev ? `${prev}\n\n${prompt}` : prompt;
+    });
+    inputRef.current?.focus();
+  }, [handleAttachLocalFile]);
 
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
     const incoming = Array.from(fileList);
@@ -523,6 +555,9 @@ export default function ChatApp() {
         const aiMessage: Message = {
           role: 'assistant',
           content: data.response,
+          referencedFiles: Array.isArray(data.referencedLocalFiles) && data.referencedLocalFiles.length > 0
+            ? data.referencedLocalFiles
+            : undefined,
         };
 
         setChatHistory((prev) => {
@@ -538,8 +573,8 @@ export default function ChatApp() {
           return nextHistory;
         });
 
-        // コーディングモードかつコードが含まれている場合はワークスペースを開く
-        if (currentMode === 'coding') {
+        // コーディングモード、またはローカルファイルが参照された場合はワークスペースを開く
+        if (currentMode === 'coding' || (Array.isArray(data.referencedLocalFiles) && data.referencedLocalFiles.length > 0)) {
           setIsWorkspaceOpen(true);
         }
       } catch (error) {
@@ -1067,21 +1102,19 @@ export default function ChatApp() {
 
           {/* 右側: モデル選択 & ワークスペース開閉 */}
           <div className="flex items-center gap-3">
-            {currentMode === 'coding' && (
-              <button
-                type="button"
-                onClick={() => setIsWorkspaceOpen((prev) => !prev)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
-                  isWorkspaceOpen
-                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
-                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-                title="コードワークスペースの表示/非表示"
-              >
-                <span>🖥️</span>
-                <span>ワークスペース {extractedFiles.length > 0 && `(${extractedFiles.length})`}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setIsWorkspaceOpen((prev) => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+                isWorkspaceOpen
+                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+              title="コードワークスペース / ローカルファイル探査の表示/非表示"
+            >
+              <span>🖥️</span>
+              <span>ワークスペース {extractedFiles.length > 0 ? `(${extractedFiles.length})` : ''}</span>
+            </button>
 
             <div className="flex items-center gap-1.5 text-xs text-gray-600">
               <span className="font-medium">モデル:</span>
@@ -1132,7 +1165,32 @@ export default function ChatApp() {
                       {msg.role === 'user' ? (
                         <p className="whitespace-pre-wrap text-sm">{getDisplayContent(msg)}</p>
                       ) : (
-                        renderAssistantContent(msg.content, index)
+                        <>
+                          {msg.referencedFiles && msg.referencedFiles.length > 0 && (
+                            <div className="mb-3 p-2.5 bg-indigo-950/70 border border-indigo-700/60 rounded-lg text-xs text-indigo-200">
+                              <div className="font-semibold flex items-center gap-1.5 text-indigo-300 mb-1.5">
+                                <span>📎</span>
+                                <span>参照したローカルファイル ({msg.referencedFiles.length}件):</span>
+                              </div>
+                              <div className="space-y-1">
+                                {msg.referencedFiles.map((f, i) => (
+                                  <div
+                                    key={i}
+                                    className="font-mono text-[11px] text-slate-200 flex items-center justify-between bg-black/40 px-2 py-1 rounded border border-indigo-900/40"
+                                  >
+                                    <span className="truncate" title={f.path}>
+                                      {f.name} <span className="text-slate-400">({f.path})</span>
+                                    </span>
+                                    <span className="text-indigo-300 text-[10px] shrink-0 ml-2">
+                                      {f.lines}行
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {renderAssistantContent(msg.content, index)}
+                        </>
                       )}
 
                       {msg.role === 'assistant' && (
@@ -1253,6 +1311,15 @@ export default function ChatApp() {
                   >
                     ＋
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsWorkspaceOpen(true)}
+                    disabled={isLoading}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-300 bg-gray-50 text-base text-gray-700 transition hover:bg-gray-100 disabled:bg-gray-50 mt-1"
+                    title="ローカルワークスペースを開いてファイルを選択・参照"
+                  >
+                    📁
+                  </button>
                   <div className="flex-1 flex flex-col gap-1">
                     <textarea
                       ref={inputRef}
@@ -1262,14 +1329,14 @@ export default function ChatApp() {
                       onKeyDown={handleKeyDown}
                       placeholder={
                         currentMode === 'coding'
-                          ? 'コーディングタスク・要件を入力、またはファイルを添付... (Enterで改行、Ctrl+Enterで送信)'
-                          : '質問を入力、またはファイルを添付... (Enterで改行、Ctrl+Enterで送信)'
+                          ? 'コーディングタスク、またはファイルパス (例: C:\\Portfolio\\... や @ファイル名) を入力... (Ctrl+Enterで送信)'
+                          : '質問、またはファイルパス (例: C:\\Portfolio\\... や @ファイル名) を入力... (Ctrl+Enterで送信)'
                       }
                       disabled={isLoading}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none disabled:bg-gray-50 text-sm leading-relaxed resize-y font-sans"
                     />
                     <div className="flex justify-between items-center px-1 text-[11px] text-gray-400">
-                      <span>💡 Enter: 改行 / Ctrl+Enter: 送信</span>
+                      <span>💡 Enter: 改行 / Ctrl+Enter: 送信 / ローカルファイルパスの直接入力にも対応</span>
                       <span>{input.length} 文字</span>
                     </div>
                   </div>
@@ -1292,13 +1359,16 @@ export default function ChatApp() {
             </div>
           </div>
 
-          {/* 右ペイン: コーディングエージェント・ワークスペース */}
-          {currentMode === 'coding' && isWorkspaceOpen && (
+          {/* 右ペイン: ワークスペース (生成コード / ローカル探査) */}
+          {isWorkspaceOpen && (
             <div className="w-1/2 min-w-95 max-w-[65%] h-full flex flex-col shrink-0">
               <CodingWorkspace
                 files={extractedFiles}
                 onUpdateFile={handleUpdateWorkspaceFile}
                 onClose={() => setIsWorkspaceOpen(false)}
+                onAttachLocalFile={handleAttachLocalFile}
+                onAskAboutLocalFile={handleAskAboutLocalFile}
+                defaultMode={currentMode === 'coding' && extractedFiles.length > 0 ? 'generated' : 'explorer'}
               />
             </div>
           )}
