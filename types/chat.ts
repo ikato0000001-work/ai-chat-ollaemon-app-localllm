@@ -7,6 +7,7 @@ export interface ReferencedFileInfo {
   name: string;
   lines: number;
   size: number;
+  isDirectory?: boolean;
 }
 
 export interface Message {

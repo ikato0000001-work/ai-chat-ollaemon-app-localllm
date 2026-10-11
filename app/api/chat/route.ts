@@ -47,10 +47,12 @@ export async function POST(request: Request) {
 
       if (referencedFiles.length > 0) {
         // ローカルファイルの内容をコンテキストとして構築
-        const contextParts = referencedFiles.map(
-          (f) => `--- 参照ローカルファイル: ${f.path} (${f.lines}行) ---\n${f.content}\n--- ファイル末尾 ---`
+        const contextParts = referencedFiles.map((f) =>
+          f.isDirectory
+            ? `--- 参照ローカルディレクトリ: ${f.path} (${f.lines}項目) ---\n${f.content}\n--- ディレクトリ末尾 ---`
+            : `--- 参照ローカルファイル: ${f.path} (${f.lines}行) ---\n${f.content}\n--- ファイル末尾 ---`
         );
-        const contextInjection = `【システム指示: 質問文で指定された以下のローカルソースコードを直接閲覧・参照して回答してください】\n\n${contextParts.join('\n\n')}`;
+        const contextInjection = `【システム指示: 質問文で指定された以下のローカル環境のファイル/ディレクトリ情報を直接閲覧・参照して回答してください】\n\n${contextParts.join('\n\n')}`;
 
         processedMessages = messages.map((m: Message) => {
           if (m === lastUserMsg) {
@@ -110,6 +112,7 @@ export async function POST(request: Request) {
         name: f.name,
         lines: f.lines,
         size: f.size,
+        isDirectory: f.isDirectory,
       })),
     });
 

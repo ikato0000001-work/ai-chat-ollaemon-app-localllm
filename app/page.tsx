@@ -1170,7 +1170,7 @@ export default function ChatApp() {
                             <div className="mb-3 p-2.5 bg-indigo-950/70 border border-indigo-700/60 rounded-lg text-xs text-indigo-200">
                               <div className="font-semibold flex items-center gap-1.5 text-indigo-300 mb-1.5">
                                 <span>📎</span>
-                                <span>参照したローカルファイル ({msg.referencedFiles.length}件):</span>
+                                <span>参照したローカル環境 ({msg.referencedFiles.length}件):</span>
                               </div>
                               <div className="space-y-1">
                                 {msg.referencedFiles.map((f, i) => (
@@ -1178,11 +1178,13 @@ export default function ChatApp() {
                                     key={i}
                                     className="font-mono text-[11px] text-slate-200 flex items-center justify-between bg-black/40 px-2 py-1 rounded border border-indigo-900/40"
                                   >
-                                    <span className="truncate" title={f.path}>
-                                      {f.name} <span className="text-slate-400">({f.path})</span>
+                                    <span className="truncate flex items-center gap-1.5" title={f.path}>
+                                      <span>{f.isDirectory ? '📁' : '📄'}</span>
+                                      <span className="font-medium text-white">{f.name}</span>
+                                      <span className="text-slate-400">({f.path})</span>
                                     </span>
                                     <span className="text-indigo-300 text-[10px] shrink-0 ml-2">
-                                      {f.lines}行
+                                      {f.isDirectory ? `${f.lines}項目` : `${f.lines}行`}
                                     </span>
                                   </div>
                                 ))}
