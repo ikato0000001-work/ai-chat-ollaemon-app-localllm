@@ -9,10 +9,6 @@ export const AVAILABLE_MODELS: ModelOption[] = [
   { id: 'qwen3-embedding:0.6b', name: 'Qwen3 Embedding 0.6B (多言語・埋め込み専用)', isCodingSpecialized: true, isEmbedding: true },
   { id: 'qwen3.5:9b', name: 'Qwen3.5 9B (コード・推論推奨・202603)', isCodingSpecialized: true, isEmbedding: false },
   { id: 'qwen3:14b', name: 'Qwen3 14B (コード特化・高性能・202604)', isCodingSpecialized: true, isEmbedding: false },
-  { id: 'deepseek-r1:8b', name: 'DeepSeek R1 8B (推論特化・軽量・202501)', isCodingSpecialized: false, isEmbedding: false },
-  { id: 'phi4', name: 'phi4(推論特化・小型・202412)', isCodingSpecialized: false, isEmbedding: false },
-  { id: 'llama3.2:3b', name: 'Llama3.2 3B (壁打ち、日常的なタスク処理・超軽量・202409)', isCodingSpecialized: false, isEmbedding: false },
-  { id: 'codestral', name: 'Codestral (コード特化・高性能・202409)', isCodingSpecialized: true, isEmbedding: false },
 ];
 
 /**
@@ -444,7 +440,20 @@ export const CODING_ANSWER_CLOSINGS = CODING_ANSWER_CLOSINGS_WITHOUT_EMOJI.map((
 );
 
 export const ensureAnswerClosingEmoji = (closing: string): string => {
-  return addClosingEmojis(closing, 0);
+  const hasValidOpeningEmoji = CLOSING_NON_FACE_EMOJIS.some((emoji) =>
+    closing.startsWith(`${emoji} `),
+  );
+  const hasRequiredEnding = closing.endsWith(` 🤬${ANSWER_CLOSING_SUFFIX}`);
+  const body = closing
+    .replace(/^\S+\s/u, '')
+    .replace(` 🤬${ANSWER_CLOSING_SUFFIX}`, '');
+  const hasInteriorEmoji = /\p{Extended_Pictographic}/u.test(body);
+
+  if (hasValidOpeningEmoji && hasRequiredEnding && hasInteriorEmoji) {
+    return closing;
+  }
+
+  return addClosingEmojis(closing, Math.floor(Math.random() * CLOSING_EMOJI_SET.length));
 };
 
 const ALL_ANSWER_CLOSINGS = [

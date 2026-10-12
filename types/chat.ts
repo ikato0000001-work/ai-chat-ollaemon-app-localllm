@@ -35,6 +35,7 @@ export interface CodeFile {
   path: string;
   language: string;
   content: string;
+  conflictingVersions?: number;
 }
 
 export interface ModelOption {
