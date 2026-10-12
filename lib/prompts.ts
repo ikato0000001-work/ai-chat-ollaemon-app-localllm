@@ -4,15 +4,15 @@ import { AgentMode, Message, ModelOption } from '@/types/chat';
  * @description 利用可能なLLMモデルのリスト
  */
 export const AVAILABLE_MODELS: ModelOption[] = [
-  { id: 'gemma4:e4b', name: 'Gemma4 4B (コード・推論・高性能・202604)', isCodingSpecialized: true },
-  { id: 'gemma4:e2b', name: 'Gemma4 2B (軽量・高速・202604)', isCodingSpecialized: true },
-  { id: 'hf.co/unsloth/embeddinggemma-2-GGUF:BF16', name: 'embeddingGemma2 (軽量・高速・202610)', isCodingSpecialized: true },
-  { id: 'qwen3.5:9b', name: 'Qwen3.5 9B (コード・推論推奨・202603)', isCodingSpecialized: true },
-  { id: 'qwen3:14b', name: 'Qwen3 14B (コード特化・高性能・202604)', isCodingSpecialized: true },
-  { id: 'deepseek-r1:8b', name: 'DeepSeek R1 8B (推論特化・軽量・202501)', isCodingSpecialized: false },
-  { id: 'phi4', name: 'phi4(推論特化・小型・202412)', isCodingSpecialized: false },
-  { id: 'llama3.2:3b', name: 'Llama3.2 3B (壁打ち、日常的なタスク処理・超軽量・202409)', isCodingSpecialized: false },
-  { id: 'codestral', name: 'Codestral (コード特化・高性能・202409)', isCodingSpecialized: true },
+  { id: 'gemma4:e4b', name: 'Gemma4 4B (コード・推論・高性能・202604)', isCodingSpecialized: true, isEmbedding: false },
+  { id: 'gemma4:e2b', name: 'Gemma4 2B (軽量・高速・202604)', isCodingSpecialized: true, isEmbedding: false },
+  { id: 'qwen3-embedding:0.6b', name: 'Qwen3 Embedding 0.6B (多言語・埋め込み専用)', isCodingSpecialized: true, isEmbedding: true },
+  { id: 'qwen3.5:9b', name: 'Qwen3.5 9B (コード・推論推奨・202603)', isCodingSpecialized: true, isEmbedding: false },
+  { id: 'qwen3:14b', name: 'Qwen3 14B (コード特化・高性能・202604)', isCodingSpecialized: true, isEmbedding: false },
+  { id: 'deepseek-r1:8b', name: 'DeepSeek R1 8B (推論特化・軽量・202501)', isCodingSpecialized: false, isEmbedding: false },
+  { id: 'phi4', name: 'phi4(推論特化・小型・202412)', isCodingSpecialized: false, isEmbedding: false },
+  { id: 'llama3.2:3b', name: 'Llama3.2 3B (壁打ち、日常的なタスク処理・超軽量・202409)', isCodingSpecialized: false, isEmbedding: false },
+  { id: 'codestral', name: 'Codestral (コード特化・高性能・202409)', isCodingSpecialized: true, isEmbedding: false },
 ];
 
 /**
@@ -21,7 +21,7 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 export const GENERAL_SYSTEM_PROMPT: Message = {
   role: 'system',
   content:
-    'あなたは非常に優秀なIT専門家「Olla衛門」です。ユーザーの質問に対して、丁寧で分かりやすい日本語で回答してください。挨拶や自己紹介は一切行わず、質問への回答のみを簡潔に、直接的にお出しください。',
+    'あなたは非常に優秀なIT専門家「Olla衛門」です。ユーザーの質問に対して、丁寧で分かりやすい日本語で回答してください。挨拶や自己紹介は一切行わず、質問への回答のみを簡潔に、直接的にお出しください。コードを出力する場合は、各コードフェンスの直後の1行目を必ず「// File: 相対パス/ファイル名.拡張子」の形式にしてください。例: ```typescript の次の行に // File: src/types/chat.ts と記述します。複数ファイルはファイルごとにコードフェンスを分け、別の表記（# File:、ファイルパス: など）を使わないでください。',
 };
 
 /**
@@ -45,7 +45,8 @@ export const CODING_AGENT_SYSTEM_PROMPT: Message = {
 3. **構造化の最小限度の分離**:
    *   回答は、①思考プロセス、②実装コード、③解説と検証の三段階で構成されるが、この分離は「読者の理解のための目次分け」とみなし、**目次分けを最小限のマークダウン見出し（##）での区切りに限定**し、その前後を文章で繋ぎます。
 4. **その他**:
-   *   コードを出力する際は、ファイル名/パス指定を必ず行ってください。
+   *   コードを出力する場合、各コードフェンスの直後の1行目を必ず \`// File: 相対パス/ファイル名.拡張子\` としてください。例: \`\`\`typescript の次の行に \`// File: src/types/chat.ts\` と記述します。\`# File:\`、\`-- File:\`、\`файлパス:\`、説明文によるパス指定など、他の形式は禁止です。
+   *   複数ファイルを出力する場合は、ファイルごとにコードフェンスを分け、それぞれの直後の1行目にそのファイルの \`// File:\` 行を置いてください。ファイルパスが特定できない場合も \`// File: example.ext\` の形式でファイル名を指定してください。
    *   常にエラーハンドリング、型安全性、エッジケースを考慮した最高水準のコードを記述してください。
 
 ---

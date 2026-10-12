@@ -37,6 +37,7 @@ export default function CodingWorkspace({
   const activeFile = files.find((f) => f.id === activeFileId) || files[0];
   const previewDoc = buildPreviewDocument(files);
   const hasPreview = !!previewDoc;
+  const conflictingFiles = files.filter((file) => file.conflictingVersions);
 
   const handleDownloadZip = async () => {
     if (files.length === 0) return;
@@ -123,6 +124,16 @@ export default function CodingWorkspace({
           </button>
         </div>
       </div>
+
+      {workspaceSection === 'generated' && conflictingFiles.length > 0 && (
+        <div
+          role="status"
+          className="border-b border-amber-700/60 bg-amber-950/50 px-3 py-2 text-xs text-amber-200"
+        >
+          <span className="font-semibold">同じパスに異なるコードが複数あります。</span>
+          {' '}最後のコードブロックを採用しました: {conflictingFiles.map((file) => file.path).join('、')}
+        </div>
+      )}
 
       {/* セクション内容 */}
       {workspaceSection === 'explorer' ? (

@@ -59,12 +59,30 @@ const DEFAULT_FILENAMES: Record<string, string> = {
 export function extractCodeFiles(content: string): CodeFile[] {
   const codeFiles: CodeFile[] = [];
   const regex = /```([^\n]*)\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
+  const codeBlocks = Array.from(content.matchAll(regex), (match) => ({
+    header: match[1]?.trim() || '',
+    code: match[2]?.replace(/^\n|\n$/g, '') || '',
+  }));
+
+  if (codeBlocks.length === 0) {
+    const fileCommentRegex = /^[ \t]*(?:#|\/\/|--)\s*(?:file(?:\s*path)?|ファイルパス|файлパス)\s*[:：]\s*(.+?)\s*$/gim;
+    const fileComments = Array.from(content.matchAll(fileCommentRegex));
+    codeBlocks.push(
+      ...fileComments.map((fileComment, index) => ({
+        header: '',
+        code: content.slice(
+          fileComment.index,
+          fileComments[index + 1]?.index ?? content.length,
+        ),
+      })),
+    );
+  }
+
   let fileIndex = 1;
 
-  while ((match = regex.exec(content)) !== null) {
-    const rawHeader = match[1]?.trim() || '';
-    let rawCode = match[2]?.replace(/^\n|\n$/g, '') || '';
+  for (const codeBlock of codeBlocks) {
+    const rawHeader = codeBlock.header;
+    let rawCode = codeBlock.code;
 
     if (!rawCode.trim()) {
       continue;
@@ -75,9 +93,13 @@ export function extractCodeFiles(content: string): CodeFile[] {
     let name = '';
 
     // A file path may be included as the first source comment instead of in the fence header.
-    const fileComment = rawCode.match(/^\s*(?:#|\/\/|--)\s*File:\s*(.+?)\s*(?:\r?\n|$)/i);
+    const fileComment = rawCode.match(
+      /^\s*(?:#|\/\/|--)\s*(?:file(?:\s*path)?|ファイルパス|файлパス)\s*[:：]\s*(.+?)\s*(?:\r?\n|$)/i,
+    );
     if (fileComment) {
-      path = fileComment[1].trim();
+      path = fileComment[1]
+        .trim()
+        .replace(/\s+(?:\([^)]*\)|（[^）]*）)\s*$/u, '');
       rawCode = rawCode.slice(fileComment[0].length);
       const extension = path.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
       if (extension && EXTENSION_MAP[extension]) {
@@ -119,7 +141,7 @@ export function extractCodeFiles(content: string): CodeFile[] {
       path = defaultName;
     }
 
-    const uniqueId = `file-${fileIndex}-${name}`;
+    const uniqueId = `file-${encodeURIComponent(path)}`;
     fileIndex += 1;
 
     codeFiles.push({
@@ -132,6 +154,31 @@ export function extractCodeFiles(content: string): CodeFile[] {
   }
 
   return codeFiles;
+}
+
+/**
+ * 同じ応答内で同一パスが複数回出た場合、最後の内容を採用し、
+ * 内容が異なる版があればその数を記録します。
+ */
+export function resolveCodeFileConflicts(files: CodeFile[]): CodeFile[] {
+  const filesByPath = new Map<string, { file: CodeFile; contents: Set<string> }>();
+
+  for (const file of files) {
+    const existing = filesByPath.get(file.path);
+    if (existing) {
+      existing.file = file;
+      existing.contents.add(file.content);
+    } else {
+      filesByPath.set(file.path, { file, contents: new Set([file.content]) });
+    }
+  }
+
+  return Array.from(filesByPath.values(), ({ file, contents }) => {
+    const { conflictingVersions: _previousConflict, ...resolvedFile } = file;
+    return contents.size > 1
+      ? { ...resolvedFile, conflictingVersions: contents.size }
+      : resolvedFile;
+  });
 }
 
 /**

@@ -18,6 +18,10 @@ interface OllamaResponse {
   content?: string;
 }
 
+interface OllamaEmbeddingResponse {
+  embeddings?: number[][];
+}
+
 const OLLAMA_TIMEOUT_MS = 15 * 60 * 1000;
 const ollamaDispatcher = new Agent({
   headersTimeout: OLLAMA_TIMEOUT_MS,
@@ -33,8 +37,59 @@ const ollamaDispatcher = new Agent({
  */
 export async function POST(request: Request) {
   try {
-    // クライアントから送信されたデータを受け取ります
-    const { messages, model } = await request.json();
+    const requestBody = await request.json() as {
+      messages?: Message[];
+      input?: string;
+      model?: string;
+    };
+    const { messages, input, model } = requestBody;
+    if (typeof model !== 'string' || !model.trim()) {
+      return NextResponse.json({ error: 'モデルが指定されていません。' }, { status: 400 });
+    }
+
+    const ollamaBaseUrl = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/$/, '');
+
+    if (input !== undefined) {
+      if (typeof input !== 'string' || !input.trim()) {
+        return NextResponse.json({ error: '埋め込み対象の input が指定されていません。' }, { status: 400 });
+      }
+
+      const response = await ollamaFetch(`${ollamaBaseUrl}/api/embed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        dispatcher: ollamaDispatcher,
+        signal: request.signal,
+        body: JSON.stringify({ model, input }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        if (errorText.includes("unknown model architecture: 'gemma-embedding2'")) {
+          return NextResponse.json({
+            error: '現在起動中のOllamaランタイムがEmbeddingGemma 2のアーキテクチャ（gemma-embedding2）に対応していません。Ollamaをこのモデル形式に対応した最新版へ更新し、Ollamaを再起動してから再試行してください。',
+          }, { status: 502 });
+        }
+
+        return NextResponse.json({
+          error: `Ollama APIエラーが発生しました。埋め込みモデルを確認してください。詳細: ${errorText}`,
+        }, { status: response.status });
+      }
+
+      const data = await response.json() as OllamaEmbeddingResponse;
+      const embedding = data.embeddings?.[0];
+      if (!Array.isArray(embedding) || embedding.length === 0) {
+        return NextResponse.json({ error: 'Ollamaから有効な埋め込みベクトルが返されませんでした。' }, { status: 502 });
+      }
+
+      return NextResponse.json({
+        response: `埋め込みベクトルを生成しました（${embedding.length}次元）。このモデルは文章生成ではなく、テキストのベクトル化に使用されます。`,
+        embeddingDimensions: embedding.length,
+      });
+    }
+
+    if (!Array.isArray(messages)) {
+      return NextResponse.json({ error: 'messages または input を指定してください。' }, { status: 400 });
+    }
 
     // ユーザーの最新メッセージからファイルパスを自動検出・読込
     const lastUserMsg = [...messages].reverse().find((m: Message) => m.role === 'user');
@@ -66,7 +121,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const ollamaBaseUrl = (process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434').replace(/\/$/, '');
     const ollamaUrl = `${ollamaBaseUrl}/api/chat`;
 
     // Ollamaサーバーにリクエストを送信

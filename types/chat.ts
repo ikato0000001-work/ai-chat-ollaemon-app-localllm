@@ -42,6 +42,7 @@ export interface ModelOption {
   name: string;
   description?: string;
   isCodingSpecialized?: boolean;
+  isEmbedding?: boolean;
 }
 
 export interface TopicMetadata {

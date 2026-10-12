@@ -14,7 +14,7 @@ import {
   stripAnswerFooter,
   QuickAction,
 } from '@/lib/prompts';
-import { extractCodeFiles } from '@/lib/codeExtractor';
+import { extractCodeFiles, resolveCodeFileConflicts } from '@/lib/codeExtractor';
 import QuickActions from '@/components/QuickActions';
 import CodingWorkspace from '@/components/CodingWorkspace';
 
@@ -342,7 +342,7 @@ export default function ChatApp() {
     const fileMap = new Map<string, CodeFile>();
 
     for (let i = assistantMessages.length - 1; i >= 0; i--) {
-      const filesInMsg = extractCodeFiles(assistantMessages[i].content);
+      const filesInMsg = resolveCodeFileConflicts(extractCodeFiles(assistantMessages[i].content));
       for (const f of filesInMsg) {
         if (!fileMap.has(f.path)) {
           fileMap.set(f.path, f);
@@ -567,13 +567,21 @@ export default function ChatApp() {
       abortControllerRef.current = abortController;
 
       try {
+        const selectedModelOption = AVAILABLE_MODELS.find((model) => model.id === selectedModel);
+        const requestBody = selectedModelOption?.isEmbedding
+          ? {
+              input: userMessage.content,
+              model: selectedModel,
+            }
+          : {
+              messages: [...preparedHistory, userMessage],
+              model: selectedModel,
+            };
+
         const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: [...preparedHistory, userMessage],
-            model: selectedModel,
-          }),
+          body: JSON.stringify(requestBody),
           signal: abortController.signal,
         });
 
