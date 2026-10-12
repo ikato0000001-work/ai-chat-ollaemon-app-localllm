@@ -14,6 +14,7 @@ export interface Message {
   role: MessageRole;
   content: string;
   displayContent?: string;
+  answerClosing?: string;
   images?: string[];
   referencedFiles?: ReferencedFileInfo[];
   timestamp?: number;

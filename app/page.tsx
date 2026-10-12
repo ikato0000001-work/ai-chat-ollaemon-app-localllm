@@ -8,8 +8,10 @@ import {
   GENERAL_SYSTEM_PROMPT,
   CODING_AGENT_SYSTEM_PROMPT,
   ANSWER_SEPARATOR,
-  GENERAL_ANSWER_CLOSING,
-  CODING_ANSWER_CLOSING,
+  ensureAnswerClosingEmoji,
+  getDefaultAnswerClosing,
+  getRandomAnswerClosing,
+  stripAnswerFooter,
   QuickAction,
 } from '@/lib/prompts';
 import { extractCodeFiles } from '@/lib/codeExtractor';
@@ -184,12 +186,46 @@ export default function ChatApp() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modelSelectRef = useRef<HTMLSelectElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const [modelSelectFontSize, setModelSelectFontSize] = useState(16);
 
   const currentMode: AgentMode = topicModes[currentTopic] || 'general';
   const selectableModels = currentMode === 'coding'
     ? AVAILABLE_MODELS.filter((model) => model.isCodingSpecialized)
     : AVAILABLE_MODELS;
+  const selectedModelName = selectableModels.find((model) => model.id === selectedModel)?.name ?? selectedModel;
+
+  useEffect(() => {
+    const select = modelSelectRef.current;
+    if (!select) return;
+
+    const updateFontSize = () => {
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) return;
+
+      const styles = window.getComputedStyle(select);
+      const baseFontSize = 16;
+      context.font = `${styles.fontWeight} ${baseFontSize}px ${styles.fontFamily}`;
+
+      const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
+      const horizontalBorders = Number.parseFloat(styles.borderLeftWidth) + Number.parseFloat(styles.borderRightWidth);
+      const availableWidth = select.clientWidth - horizontalPadding - horizontalBorders - 28;
+      const textWidth = context.measureText(selectedModelName).width;
+      const fittedSize = textWidth > availableWidth
+        ? Math.max(7, Math.floor((baseFontSize * availableWidth / textWidth) * 10) / 10)
+        : baseFontSize;
+
+      setModelSelectFontSize((currentSize) => currentSize === fittedSize ? currentSize : fittedSize);
+    };
+
+    updateFontSize();
+    const resizeObserver = new ResizeObserver(updateFontSize);
+    resizeObserver.observe(select);
+
+    return () => resizeObserver.disconnect();
+  }, [selectedModelName]);
   
   useEffect(() => {
     if (currentMode !== 'coding' || selectableModels.some((model) => model.id === selectedModel)) {
@@ -264,10 +300,11 @@ export default function ChatApp() {
       const historyWithoutImages = Object.fromEntries(
         Object.entries(history).map(([topic, messages]) => [
           topic,
-          messages.map(({ role, content, displayContent, referencedFiles }) => ({
+          messages.map(({ role, content, displayContent, answerClosing, referencedFiles }) => ({
             role,
             content,
             displayContent,
+            ...(answerClosing ? { answerClosing } : {}),
             ...(referencedFiles ? { referencedFiles } : {}),
           })),
         ]),
@@ -555,6 +592,7 @@ export default function ChatApp() {
         const aiMessage: Message = {
           role: 'assistant',
           content: data.response,
+          answerClosing: getRandomAnswerClosing(currentMode),
           referencedFiles: Array.isArray(data.referencedLocalFiles) && data.referencedLocalFiles.length > 0
             ? data.referencedLocalFiles
             : undefined,
@@ -592,6 +630,7 @@ export default function ChatApp() {
         const errorDisplayMessage: Message = {
           role: 'assistant',
           content: `⚠️ ${errorMessage}`,
+          answerClosing: getRandomAnswerClosing(currentMode),
         };
 
         setChatHistory((prev) => {
@@ -762,9 +801,7 @@ export default function ChatApp() {
 
   const copyMessage = async (content: string, index: number) => {
     try {
-      const copyableContent = content
-        .replace(new RegExp(`\\n\\n${ANSWER_SEPARATOR}\\n*(${GENERAL_ANSWER_CLOSING}|${CODING_ANSWER_CLOSING})\\.?$`), '')
-        .trimEnd();
+      const copyableContent = stripAnswerFooter(content).trimEnd();
       await navigator.clipboard.writeText(copyableContent);
       setCopiedMessageIndex(index);
       window.setTimeout(() => {
@@ -795,16 +832,19 @@ export default function ChatApp() {
     );
   };
 
-  const renderAssistantContent = (content: string, messageIndex: number) => {
+  const renderAssistantContent = (content: string, messageIndex: number, closing?: string) => {
     const isCoding = currentMode === 'coding';
-    const displayContent = content
-      .replace(new RegExp(`\\n\\n${ANSWER_SEPARATOR}\\n*(${GENERAL_ANSWER_CLOSING}|${CODING_ANSWER_CLOSING})\\.?$`), '')
-      .trimEnd();
+    const assistantTextColor = isCoding ? 'text-slate-50' : '';
+    const displayContent = stripAnswerFooter(content).trimEnd();
     const sections = displayContent.split(/```([^\n]*)\n?([\s\S]*?)```/g);
     let renderedContent: React.ReactNode;
 
     if (sections.length === 1) {
-      renderedContent = <p className="whitespace-pre-wrap text-sm">{renderAssistantText(content, `message-${messageIndex}`)}</p>;
+      renderedContent = (
+        <p className={`whitespace-pre-wrap text-xl leading-relaxed ${assistantTextColor}`}>
+          {renderAssistantText(displayContent, `message-${messageIndex}`)}
+        </p>
+      );
     } else {
       const renderedSections = [];
       let codeBlockIndex = 0;
@@ -813,7 +853,7 @@ export default function ChatApp() {
         if (sectionIndex % 3 === 0) {
           if (sections[sectionIndex]) {
             renderedSections.push(
-              <p key={`text-${sectionIndex}`} className="whitespace-pre-wrap text-sm leading-relaxed">
+              <p key={`text-${sectionIndex}`} className={`whitespace-pre-wrap text-xl leading-relaxed ${assistantTextColor}`}>
                 {renderAssistantText(sections[sectionIndex], `message-${messageIndex}-${sectionIndex}`)}
               </p>,
             );
@@ -853,7 +893,7 @@ export default function ChatApp() {
                 </button>
               </div>
             </div>
-            <pre className="overflow-x-auto p-3 text-xs leading-5 text-gray-100 font-mono">
+            <pre className="overflow-x-auto p-3 text-sm leading-6 text-gray-100 font-mono">
               <code>{code}</code>
             </pre>
           </div>
@@ -863,16 +903,18 @@ export default function ChatApp() {
       renderedContent = renderedSections;
     }
 
-    const answerClosing = isCoding ? CODING_ANSWER_CLOSING : GENERAL_ANSWER_CLOSING;
+    const answerClosing = ensureAnswerClosingEmoji(
+      closing ?? getDefaultAnswerClosing(isCoding ? 'coding' : 'general'),
+    );
 
     return (
       <>
         {renderedContent}
-        <div className="mt-4 flex flex-col items-start gap-1 text-sm border-t border-gray-300/30 pt-3">
-          <span className="text-gray-400 text-xs">{ANSWER_SEPARATOR}</span>
-          <span className="inline-flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+        <div className={`mt-4 flex flex-col items-start gap-1 text-sm border-t pt-3 ${isCoding ? 'border-slate-600' : 'border-gray-300/30'}`}>
+          <span className={`text-xs ${isCoding ? 'text-slate-300' : 'text-gray-400'}`}>{ANSWER_SEPARATOR}</span>
+          <span className={`inline-flex flex-wrap items-center gap-2 text-2xl font-semibold ${isCoding ? 'text-slate-50' : 'text-gray-600 dark:text-gray-300'}`}>
             <span>{answerClosing}</span>
-            <Image src="/samurai-avatar.svg" alt="Olla衛門" width={20} height={20} className="h-5 w-5" />
+            <Image src="/Ollaemon_Image.jpg" alt="Olla衛門" width={160} height={87} className="h-21.75 w-40 shrink-0 object-contain" />
           </span>
         </div>
       </>
@@ -1044,68 +1086,85 @@ export default function ChatApp() {
       {/* メインエリア（チャット + ワークスペース） */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* ヘッダー */}
-        <header className="px-4 py-2.5 bg-white border-b border-gray-200 flex justify-between items-center shadow-xs shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="px-5 py-4 bg-white border-b border-gray-200 flex flex-wrap justify-start items-center gap-4 shadow-xs shrink-0">
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={() => setIsSidebarOpen((prev) => !prev)}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 text-base text-gray-700 transition hover:bg-gray-100"
+              className="flex h-14 w-14 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-2xl text-gray-700 transition hover:bg-gray-100"
               title={isSidebarOpen ? '履歴を閉じる' : '履歴を開く'}
             >
               ☰
             </button>
 
-            <div className="flex items-center gap-2">
-              <Image src="/samurai-avatar.svg" alt="侍姿のOlla衛門" width={32} height={32} className="h-8 w-8" />
-              <div>
-                <h1 className="text-base font-extrabold text-gray-900 leading-none flex items-center gap-2">
-                  <span>Olla衛門</span>
-                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+            <div className="flex items-center gap-3">
+              <Image src="/Ollaemon_Image.jpg" alt="Olla! ロゴ" width={1408} height={768} className="h-19.75 w-36 object-contain" />
+              <div className="flex items-center gap-4">
+                <h1 className="text-2xl font-extrabold text-gray-900 leading-tight">
+                  <span className="text-7xl">Olla衛門</span>
+                </h1>
+                <div className="flex flex-col items-start gap-2">
+                  <span className={`text-xs font-medium px-2 py-1 rounded-full ${
                     currentMode === 'coding'
                       ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
                       : 'bg-blue-100 text-blue-800 border border-blue-200'
                   }`}>
                     {currentMode === 'coding' ? '技師（コーディングエージェント）' : '標準モード'}
                   </span>
-                </h1>
+                  <div className="flex items-center rounded-lg bg-gray-100 p-1 border border-gray-200 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => switchMode('general')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition ${
+                        currentMode === 'general'
+                          ? 'bg-white text-blue-700 shadow-xs'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <span>💬</span>
+                      <span>通常チャット</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchMode('coding')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition ${
+                        currentMode === 'coding'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      <span>🛠️</span>
+                      <span>技師エージェント</span>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* 中央: モード切替タブ */}
-          <div className="flex items-center rounded-lg bg-gray-100 p-1 border border-gray-200 text-xs">
-            <button
-              type="button"
-              onClick={() => switchMode('general')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition ${
-                currentMode === 'general'
-                  ? 'bg-white text-blue-700 shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <span>💬</span>
-              <span>通常チャット</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode('coding')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md font-medium transition ${
-                currentMode === 'coding'
-                  ? 'bg-indigo-600 text-white shadow-xs'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <span>🛠️</span>
-              <span>技師エージェント</span>
-            </button>
-          </div>
-
           {/* 右側: モデル選択 & ワークスペース開閉 */}
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 text-gray-700">
+              <span className="relative -left-3.75 text-lg font-bold">AIモデル:</span>
+              <select
+                ref={modelSelectRef}
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                style={{ fontSize: `${modelSelectFontSize}px` }}
+                className="relative -left-3.75 w-100 max-w-[calc(30vw+40px)] min-w-0 rounded-lg border-2 border-gray-300 bg-white px-3 py-3 font-semibold shadow-sm focus:border-indigo-500 focus:outline-none"
+              >
+                {selectableModels.map((model) => (
+                  <option key={model.id} value={model.id} className="text-sm">
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
               type="button"
               onClick={() => setIsWorkspaceOpen((prev) => !prev)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold transition ${
+              className={`relative -left-3.75 flex items-center gap-2 px-3.5 py-3 rounded-lg border text-base font-semibold transition ${
                 isWorkspaceOpen
                   ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
                   : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
@@ -1115,21 +1174,6 @@ export default function ChatApp() {
               <span>🖥️</span>
               <span>ワークスペース {extractedFiles.length > 0 ? `(${extractedFiles.length})` : ''}</span>
             </button>
-
-            <div className="flex items-center gap-1.5 text-xs text-gray-600">
-              <span className="font-medium">モデル:</span>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="rounded-md border border-gray-300 bg-white px-2.5 py-1 text-xs focus:border-indigo-500 focus:outline-none"
-              >
-                {selectableModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         </header>
 
@@ -1147,7 +1191,7 @@ export default function ChatApp() {
                     key={`${msg.role}-${index}`}
                     className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-[90%] md:max-w-[80%] p-4 rounded-xl shadow-xs ${getMessageClass(msg.role)}`}>
+                    <div className={`${msg.role === 'assistant' ? 'max-w-full' : 'max-w-[90%] md:max-w-[80%]'} p-4 rounded-xl shadow-xs ${getMessageClass(msg.role)}`}>
                       <strong className="text-xs font-medium block mb-1.5">
                         {msg.role === 'user' ? (
                           <span className="inline-flex items-center gap-1.5 text-blue-100">
@@ -1156,7 +1200,7 @@ export default function ChatApp() {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1.5 text-indigo-400 font-semibold">
-                            <Image src="/samurai-avatar.svg" alt="" width={18} height={18} className="h-4 w-4" />
+                            <Image src="/Ollaemon_Image.jpg" alt="" width={32} height={18} className="h-4 w-8 object-contain" />
                             {currentMode === 'coding' ? 'Olla衛門 技師' : 'Olla衛門'}
                           </span>
                         )}
@@ -1191,7 +1235,7 @@ export default function ChatApp() {
                               </div>
                             </div>
                           )}
-                          {renderAssistantContent(msg.content, index)}
+                          {renderAssistantContent(msg.content, index, msg.answerClosing)}
                         </>
                       )}
 
@@ -1222,7 +1266,7 @@ export default function ChatApp() {
                 <div className="flex justify-start">
                   <div className="p-4 bg-white border border-gray-200 rounded-xl shadow-xs animate-pulse">
                     <strong className="flex items-center gap-2 text-xs text-indigo-600 font-semibold">
-                      <Image src="/samurai-avatar.svg" alt="" width={20} height={20} className="h-5 w-5" />
+                      <Image src="/Ollaemon_Image.jpg" alt="" width={40} height={22} className="h-5 w-10 object-contain" />
                       {currentMode === 'coding' ? 'Olla衛門 技師がコードを構築中...' : 'Olla衛門が思考中...'}
                     </strong>
                   </div>
