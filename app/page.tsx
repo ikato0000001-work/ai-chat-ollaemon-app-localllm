@@ -970,7 +970,8 @@ export default function ChatApp() {
 
       saveHistory(nextHistory);
       if (currentTopic === topicName) {
-        const nextTopic = Object.keys(nextHistory)[0];
+        const nextTopic = Object.keys(nextHistory).at(-1);
+        if (!nextTopic) return nextHistory;
         setCurrentTopic(nextTopic);
       }
 
@@ -1033,7 +1034,7 @@ export default function ChatApp() {
 
           {/* トピックリスト */}
           <div className="space-y-1.5 overflow-y-auto flex-1 pr-1 scrollbar-thin">
-            {Object.keys(chatHistory).map((topic) => {
+            {Object.keys(chatHistory).reverse().map((topic) => {
               const mode = topicModes[topic] || 'general';
               const isSelected = currentTopic === topic;
               return (

@@ -296,11 +296,57 @@ const CLOSING_EMOJIS = [
   '🍩',
 ];
 
-const getClosingEmoji = (index: number): string => CLOSING_EMOJIS[index % CLOSING_EMOJIS.length];
+const ADDITIONAL_CLOSING_EMOJIS = [
+  '👋', '🤚', '🖐️', '✋', '🖖', '🫱', '🫲', '🫳', '🫴', '🫷',
+  '🫸', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙',
+  '👈', '👉', '👆', '🖕', '👇', '☝️', '🫵', '👍', '👎', '✊',
+  '👊', '🤛', '🤜', '👏', '🙌', '🫶', '👐', '🤲', '🤝', '🙏',
+  '✍️', '💅', '🤳', '💪', '🦾', '🦿', '🦵', '🦶', '👂', '🦻',
+  '👃', '🫀', '🫁', '🧠', '🦷', '🦴', '👀', '👁️', '👅', '👄',
+  '🫦', '👶', '🧒', '👦', '👧', '🧑', '👱', '👨', '🧔', '🧔‍♂️',
+  '🧔‍♀️', '👩', '🧓', '👴', '👵', '🙍', '🙎', '🙅', '🙆', '💁',
+  '🙋', '🧏', '🙇', '🤦', '🤷', '👮', '🕵️', '💂', '🥷', '👷',
+  '🫅', '🤴', '👸', '👳', '👲', '🧕', '🤵', '👰', '🤰', '🫃',
+  '🫄', '🤱', '👼', '🎅', '🤶', '🧑‍🎄', '🦸', '🦹', '🧙', '🧚',
+  '🧛', '🧜', '🧝', '🧞', '🧟', '🧌', '💆', '💇', '🚶', '🧍',
+  '🧎', '🧑‍🦯', '🧑‍🦼', '🧑‍🦽', '🏃', '💃', '🕺', '🕴️', '👯', '🧖',
+  '🧗‍♀️', '🧗‍♂️', '🧑‍🎓', '🧑‍🏫', '🧑‍⚕️', '🧑‍🌾', '🧑‍🍳', '🧑‍🔧', '🧑‍🏭', '🧑‍💻',
+  '🧑‍💼', '🧑‍🔬', '🧑‍🎨', '🧑‍🚒', '🧑‍✈️', '🧑‍🚀', '🧑‍⚖️', '🧑‍🍼', '👣', '🧳',
+  '🌂', '☂️', '🧵', '🪡', '🧶', '🪢', '🧥', '🥼', '🦺', '👚',
+  '👕', '👖', '🩲', '🩳', '👔', '👗', '👙', '🩱', '👘', '🥻',
+  '🩴', '🥿', '👠', '👡', '👢', '👞', '👟', '🥾', '🧦', '🧤',
+  '🧣', '🎩', '🧢', '👒', '⛑️', '👑', '💍', '💎', '🔇', '🔈',
+  '🔉', '🔊', '📢', '📣', '📯', '🔔', '🔕', '🎼', '🎵', '🎶',
+  '🎙️', '🎚️', '🎛️', '🎤', '🎧', '📻', '🎷', '🪗', '🎸', '🎹',
+  '🎺', '🎻', '🪕', '🥁', '🪘', '🪇', '🪈', '📱', '📲', '☎️',
+  '📞', '📟', '📠', '🔋', '🪫', '🔌', '💻', '🖥️', '🖨️', '⌨️',
+  '🖱️', '🖲️', '💽', '💾', '💿', '📀', '🧮', '🎥', '🎞️', '📽️',
+  '🎬', '📺', '📷', '📸', '📹', '📼', '🔍', '🔎', '🕯️', '💡',
+  '🔦', '🏮', '🪔', '📔', '📕', '📖', '📗', '📘', '📙', '📚',
+  '📓', '📒', '📃', '📜', '📄', '📰', '🗞️', '📑', '🔖', '🏷️',
+  '✉️', '📧', '📨', '📩', '📤', '📥', '📦', '📫', '📪', '📬',
+  '📭', '📮', '🗳️', '✏️', '✒️', '🖋️', '🖊️', '🖌️', '🖍️', '📝',
+  '💼', '📁', '📂', '🗂️', '📅', '📆', '🗒️', '🗓️', '📇', '📈',
+];
+
+const CLOSING_EMOJI_SET = [...CLOSING_EMOJIS, ...ADDITIONAL_CLOSING_EMOJIS];
+const CLOSING_FACE_EMOJIS = new Set([
+  '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😉',
+  '😊', '😇', '🥰', '😍', '🤩', '😘', '😋', '😜', '🤪', '🤗',
+  '🤔', '🫡', '😎', '🤓', '🥳', '🥹', '😴', '😷', '🤯', '👻',
+  '💀', '🤖', '👽', '🎃', '😺', '😸', '😹', '😻', '😼', '🙈', '🙉',
+  '🙊', '🐵',
+]);
+const CLOSING_NON_FACE_EMOJIS = CLOSING_EMOJI_SET.filter((emoji) => !CLOSING_FACE_EMOJIS.has(emoji));
+
+const getClosingEmoji = (index: number, salt = 0): string =>
+  CLOSING_EMOJI_SET[(index * 137 + salt * 251) % CLOSING_EMOJI_SET.length];
+const getOpeningClosingEmoji = (index: number): string =>
+  CLOSING_NON_FACE_EMOJIS[(index * 137) % CLOSING_NON_FACE_EMOJIS.length];
 
 const addClosingEmojis = (closing: string, index: number): string => {
   const body = closing
-    .replace(/\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?)*(?:\p{Emoji_Modifier})?/gu, '')
+    .replace(/(?:\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?)*(?:\p{Emoji_Modifier})?|[\u{1F1E6}-\u{1F1FF}]{2})/gu, '')
     .replaceAll(ANSWER_CLOSING_SUFFIX, '')
     .trim();
   const characters = [...body];
@@ -315,7 +361,7 @@ const addClosingEmojis = (closing: string, index: number): string => {
     : Math.max(1, Math.floor(midpoint));
   const interiorEmojiCount = index % 2 === 0 ? 1 : 2;
   const interiorEmojis = Array.from({ length: interiorEmojiCount }, (_, emojiIndex) =>
-    getClosingEmoji(index * 3 + emojiIndex + 1),
+    getClosingEmoji(index, emojiIndex + 1),
   ).join('');
   const withInteriorEmojis = [
     ...characters.slice(0, insertionPosition),
@@ -323,7 +369,7 @@ const addClosingEmojis = (closing: string, index: number): string => {
     ...characters.slice(insertionPosition),
   ].join('');
 
-  return `${getClosingEmoji(index)} ${withInteriorEmojis} 🤬${ANSWER_CLOSING_SUFFIX}`;
+  return `${getOpeningClosingEmoji(index)} ${withInteriorEmojis} 🤬${ANSWER_CLOSING_SUFFIX}`;
 };
 
 const GENERAL_CLOSING_OPENERS = [
