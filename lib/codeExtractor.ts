@@ -1,5 +1,5 @@
 // lib/codeExtractor.ts
-import { CodeFile } from '@/types/chat';
+import type { CodeFile } from '@/types/chat';
 
 const EXTENSION_MAP: Record<string, string> = {
   js: 'javascript',
@@ -64,7 +64,7 @@ export function extractCodeFiles(content: string): CodeFile[] {
 
   while ((match = regex.exec(content)) !== null) {
     const rawHeader = match[1]?.trim() || '';
-    const rawCode = match[2]?.replace(/^\n|\n$/g, '') || '';
+    let rawCode = match[2]?.replace(/^\n|\n$/g, '') || '';
 
     if (!rawCode.trim()) {
       continue;
@@ -74,21 +74,36 @@ export function extractCodeFiles(content: string): CodeFile[] {
     let path = '';
     let name = '';
 
+    // A file path may be included as the first source comment instead of in the fence header.
+    const fileComment = rawCode.match(/^\s*(?:#|\/\/|--)\s*File:\s*(.+?)\s*(?:\r?\n|$)/i);
+    if (fileComment) {
+      path = fileComment[1].trim();
+      rawCode = rawCode.slice(fileComment[0].length);
+      const extension = path.replace(/\\/g, '/').split('/').pop()?.split('.').pop()?.toLowerCase();
+      if (extension && EXTENSION_MAP[extension]) {
+        language = EXTENSION_MAP[extension];
+      }
+    }
+
+    if (!rawCode.trim()) {
+      continue;
+    }
+
     // パターン1: ```lang:path (例: ```typescript:src/index.ts)
     // パターン2: ```path (例: ```src/index.ts)
     // パターン3: ```lang (例: ```typescript)
-    if (rawHeader.includes(':')) {
+    if (!path && rawHeader.includes(':')) {
       const parts = rawHeader.split(':');
       language = parts[0].trim().toLowerCase();
       path = parts.slice(1).join(':').trim();
-    } else if (rawHeader.includes('/') || rawHeader.includes('\\') || rawHeader.includes('.')) {
+    } else if (!path && (rawHeader.includes('/') || rawHeader.includes('\\') || rawHeader.includes('.'))) {
       path = rawHeader;
       const dotIndex = path.lastIndexOf('.');
       if (dotIndex >= 0) {
         const ext = path.slice(dotIndex + 1).toLowerCase();
         language = EXTENSION_MAP[ext] || ext;
       }
-    } else if (rawHeader) {
+    } else if (!path && rawHeader) {
       language = rawHeader.toLowerCase();
     }
 
@@ -97,6 +112,7 @@ export function extractCodeFiles(content: string): CodeFile[] {
       const normalized = path.replace(/\\/g, '/');
       const segments = normalized.split('/');
       name = segments[segments.length - 1] || `file_${fileIndex}`;
+      path = normalized;
     } else {
       const defaultName = DEFAULT_FILENAMES[language] || `snippet_${fileIndex}.txt`;
       name = defaultName;
